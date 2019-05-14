@@ -4,39 +4,152 @@
         <active>true</active>
         <api_name>x_2353_multi_row_v.MultiRowTableHelper</api_name>
         <client_callable>true</client_callable>
-        <description/>
+        <description>Script include to parse MultiRow Variable Sets to meaningful objects.</description>
         <name>MultiRowTableHelper</name>
         <script><![CDATA[var MultiRowTableHelper = Class.create();
-MultiRowTableHelper.prototype = Object.extendsObject(AbstractAjaxProcessor, {
+MultiRowTableHelper.prototype = Object.extendsObject(global.AbstractAjaxProcessor, {
+    /**
+     * @description - Initialization function to set up the global variables for this script include.
+     * 
+     * @param ritm [String] - the SysID of the RITM upon which the table resides
+     * @param variableSet [String] - the SysID of the Multi-Row VariableSet to be parsed.
+     */
+    initialize: function (ritm, variableSet) {
+        this.ritm = ritm;
+        this.variableSet = variableSet;
+        this.isValidTable = this._validateTable();
+        if (this.isValidTable.status) {
+            this.tableObject = this._parseTable();
+        } else {
+            this._reportError();
+        }
+    },
+
+    /**
+     * @description - Function to validate the input provided at initialization
+     * 
+     * @returns [Object] - Returns an object with overall status, as well as breakdown
+     */
+    _validateTable: function () {
+        var requestItem = new GlideRecord("sc_req_item");
+        var validRITM = requestItem.get(this.ritm);
+
+        var variableSet = new GlideRecord("item_option_new_set");
+        var validVariableSet = variableSet.get(this.variableSet);
+
+        return {
+            "status": (validRITM && validVariableSet),
+            "validRITM": validRITM,
+            "validVariableSet": validVariableSet
+        };
+    },
+
+    /**
+     * @description - Function output error to the system logs for invalid input
+     */
+    _reportError: function () {
+        var errorMessage = "Warning, the following invalid parameters were specified to the MultiRow Variable Set parser: ";
+
+        if (!this.isValidTable.validRITM) {
+            errorMessage += "RITM (" + this.ritm + ")  ";
+        }
+
+        if (!this.isValidTable.validVariableSet) {
+            errorMessage += "VariableSet (" + this.variableSet + ")";
+        }
+
+        gs.error(errorMessage);
+
+        return errorMessage;
+    },
+
     /**
      * @description Function to parse out ServiceNow MultiRow Table Structure.
-     *
-     * @params {String:SysID} ritm - RITM SysID
-     * @params {String:SysID} VariableSet - VariableSet Name
+     * 
+     * @returns [Object] - Object containing table characterists, rows, column names, size
      */
-    getTableRows: function (ritm, variableSet) {
-        var dataObject = {};
+    _parseTable: function () {
+        var tableRows = [];
+        var tableColumns = [];
+        var currentRowID = "";
+        var previousRowID = "";
+        var currentRow = 0;
 
         var myDataTable = new GlideRecord("sc_multi_row_question_answer");
-        myDataTable.addQuery("variable_set", variableSet);
-        myDataTable.addQuery("parent_id", ritm);
+        myDataTable.addQuery("variable_set", this.variableSet);
+        myDataTable.addQuery("parent_id", this.ritm);
         myDataTable.orderBy("row_index");
         myDataTable.query();
 
-        var currentRowID = myDataTable.row_index.toString();
-        var currentRow = 1;
-
         while (myDataTable.next()) {
-            if (currentRowID != myDataTable.row_index.toString()) {
-                currentRow++;
+            if (currentRowID == "") {
+                currentRowID = myDataTable.row_index.getDisplayValue();
+                previousRowID = currentRowID + '';
+            } else {
+                currentRowID = myDataTable.row_index.getDisplayValue();
+
+                if (currentRowID != previousRowID) {
+                    currentRow++;
+                }
             }
 
-            dataObject.row = currentRow;
-            dataObject.row.variableSet = [myDataTable.variable_set.toString()];
-            dataObject.row.questions[myDataTable.item_option_new.toString()] = myDataTable.value.toString();
+            tableRows[currentRow] = tableRows[currentRow] || {};
+            tableRows[currentRow][myDataTable.item_option_new.name + ''] = myDataTable.value + '';
+
+            if (currentRow == 0) {
+                tableColumns.push(myDataTable.item_option_new.name + '');
+            }
+
+            previousRowID = currentRowID + '';
         }
 
-        return dataObject;
+        return ({
+            "success": true,
+            "tableSize": tableRows.length,
+            "tableRows": tableRows,
+            "tableColumns": tableColumns
+        });
+    },
+
+    /**
+     * @description - Function to return the rows of a table.
+     * 
+     * @returns [ArrayOfObjects] - Returns an array of rows, each row
+     *  being an object containing name value pairing of the columns and values...
+     * [{"field1": value1, "field2": value2}, {"field1": value1, "field2": value2}]
+     */
+    getTableRows: function () {
+        if (!this.isValidTable.status) {
+            return "Error : Check Logs";
+        }
+
+        return this.tableObject.tableRows;
+    },
+
+    /**
+     * @description - Function to return the names of the table columns
+     * 
+     * @returns [Array] - Returns an array, each element being a table column
+     */
+    getTableColumns: function () {
+        if (!this.isValidTable.status) {
+            return "Error : Check Logs";
+        }
+
+        return this.tableObject.tableColumns;
+    },
+
+    /**
+     * @description - Function to return the total rows in a table
+     * 
+     * @returns [Integer] - The total rows found in the table.
+     */
+    getTableSize: function () {
+        if (!this.isValidTable.status) {
+            return "Error : Check Logs";
+        }
+
+        return this.tableObject.tableSize;
     },
 
     type: 'MultiRowTableHelper'
@@ -45,13 +158,13 @@ MultiRowTableHelper.prototype = Object.extendsObject(AbstractAjaxProcessor, {
         <sys_created_by>admin</sys_created_by>
         <sys_created_on>2019-05-13 17:55:59</sys_created_on>
         <sys_id>35add38f4f9933006613cab18110c7b6</sys_id>
-        <sys_mod_count>1</sys_mod_count>
+        <sys_mod_count>38</sys_mod_count>
         <sys_name>MultiRowTableHelper</sys_name>
         <sys_package display_value="Multi-Row VariableSet API" source="x_2353_multi_row_v">5369d3c74f9933006613cab18110c717</sys_package>
         <sys_policy/>
         <sys_scope display_value="Multi-Row VariableSet API">5369d3c74f9933006613cab18110c717</sys_scope>
         <sys_update_name>sys_script_include_35add38f4f9933006613cab18110c7b6</sys_update_name>
         <sys_updated_by>admin</sys_updated_by>
-        <sys_updated_on>2019-05-13 18:07:02</sys_updated_on>
+        <sys_updated_on>2019-05-14 20:08:45</sys_updated_on>
     </sys_script_include>
 </record_update>
